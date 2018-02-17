@@ -4,9 +4,10 @@
  * Btree structure implementation with the following properties:
  * - keeps entries in simple array structure
  * - keeps children in array structure mapped to the key array structure
+ * BTree visualization: http://www.cs.usfca.edu/~galles/visualization/BTree.html
  */
 public class Btree {
-    public static int MIN_NUM_CHILDREN = 3;
+    public static int MIN_DEGREE = 3; // min number of children
 
     public static class Entry {
         public int key;
@@ -25,14 +26,16 @@ public class Btree {
 
     public static class Node {
         private boolean leaf;
+        private boolean root;
         private int numKeys;
         public Entry[] entries;
         public Node[] children;
 
-        public Node(boolean leaf) {
+        public Node(boolean leaf, boolean root) {
             this.leaf = leaf;
-            entries = new Entry[2 * MIN_NUM_CHILDREN - 1];
-            children = new Node[2 * MIN_NUM_CHILDREN];
+            this.root = root;
+            entries = new Entry[2 * MIN_DEGREE - 1];
+            children = new Node[2 * MIN_DEGREE];
         }
 
         /**
@@ -61,41 +64,31 @@ public class Btree {
         }
 
         public boolean delete(int key) {
-            Node containerNode = find(key);
-
-            if (containerNode == null) {
-                return false;
-            }
-
-            return deleteFromChild(containerNode, key);
-        }
-
-        private boolean deleteFromChild(Node child, int key) {
-            if (child.isLeaf()) {
+            if (isLeaf()) {
 
                 // case 1: key in leaf node with enough keys aside from deleted key
                 // make sure that this node still fulfills the BTree properties after deleting the key
-                // min numKeys must be MIN_NUM_CHILDREN - 1 at all times
-                if (child.numKeys >= MIN_NUM_CHILDREN) {
-                    if (!child.hasKey(key)) {
+                // min numKeys must be MIN_DEGREE - 1 at all times
+                if (isRoot() || numKeys > MIN_DEGREE) {
+                    if (!hasKey(key)) {
                         return false;
                     }
 
                     // remove key
-                    int index = child.numKeys - 1;
-                    while (key != child.entries[index].key) {
+                    int index = numKeys - 1;
+                    while (key != entries[index].key) {
                         index--;
                     }
 
-                    child.entries[index] = null;
+                    entries[index] = null;
 
                     // compact keys
-                    for (int i = index; i < child.numKeys - 1; i++) {
-                        child.entries[i] = child.entries[i + 1];
+                    for (int i = index; i < numKeys - 1; i++) {
+                        entries[i] = entries[i + 1];
                     }
 
                     // decrement current number of keys
-                    child.numKeys--;
+                    numKeys--;
                 } else {
                     return false;
                 }
@@ -160,31 +153,35 @@ public class Btree {
         }
 
         public boolean isFull() {
-            return numKeys == 2 * MIN_NUM_CHILDREN - 1;
+            return numKeys == 2 * MIN_DEGREE - 1;
         }
 
         public boolean isLeaf() {
             return leaf;
         }
 
-        private Node splitChild(int childIndex, Node child) {
-            Node newChild = new Node(child.isLeaf());
+        public boolean isRoot() {
+            return this.root;
+        }
 
-            // copy over entries
-            for (int i = 0; i < MIN_NUM_CHILDREN - 1; i++) {
-                newChild.entries[i] = child.entries[MIN_NUM_CHILDREN + i];
+        private Node splitChild(int childIndex, Node child) {
+            Node newChild = new Node(child.isLeaf(), false);
+
+            // copy over upper half of the entries
+            for (int i = 0; i < MIN_DEGREE - 1; i++) {
+                newChild.entries[i] = child.entries[MIN_DEGREE + i];
                 newChild.numKeys++;
             }
 
             // copy over children if not leaf
             if (!isLeaf()) {
-                for (int i = 0; i < MIN_NUM_CHILDREN; i++) {
-                    newChild.children[i] = child.children[MIN_NUM_CHILDREN + i];
+                for (int i = 0; i < MIN_DEGREE; i++) {
+                    newChild.children[i] = child.children[MIN_DEGREE + i];
                 }
             }
 
             // reduce entries and children in old node
-            child.numKeys = MIN_NUM_CHILDREN - 1;
+            child.numKeys = MIN_DEGREE - 1;
 
             // link new child to the correct index position
             // shift all tailing children in the array to make room
@@ -195,10 +192,52 @@ public class Btree {
             this.children[childIndex + 1] = newChild;
 
             // move middle key of child to current node
-            addNewEntry(child.entries[MIN_NUM_CHILDREN - 1]);
+            addNewEntry(child.entries[MIN_DEGREE - 1]);
 
             // return current node to further use in search/insert
             // current node will be updated and will contain one extra key and one extra child
+            return this;
+        }
+
+        /**
+         * Merge child at childIndex with child at childIndex + 1
+         * @return
+         */
+        private Node mergeChildren(int childIndex) {
+            Node firstChild = children[childIndex];
+            Node sibling = children[childIndex + 1];
+
+            // TODO verifica
+            // pull a key from parent into first merge node
+            firstChild.entries[numKeys - 1] = entries[childIndex];
+
+            // copy over other node's keys and children
+            for (int i = 0; i < firstChild.numKeys; i++) {
+                firstChild.entries[i + numKeys] = sibling.entries[i];
+            }
+
+            if (!isLeaf()) {
+                for (int i = 0; i < firstChild.numKeys; i++) {
+                    firstChild.children[i + numKeys] = sibling.children[i];
+                }
+            }
+
+            // compact keys in current node after moving one key to child
+            for (int i = childIndex + 1; i < numKeys; i++) {
+                entries[i - 1] = entries[i];
+            }
+
+            // compact child mappings after merging in child[firstMergeChildIndex + 1]
+            for (int i = childIndex + 2; i <= numKeys; i++) {
+                children[i - 1] = children[i];
+            }
+
+            // update child key count: 1 key from current node + sibling keys
+            firstChild.numKeys += sibling.numKeys + 1;
+
+            // update current node key count
+            numKeys -= 1;
+
             return this;
         }
 
@@ -226,15 +265,25 @@ public class Btree {
 
     public static class BTreeManager {
         public static Node splitRoot(Node root) {
-            Node newRoot = new Node(false);
+            Node newRoot = new Node(false, true);
             newRoot.children[0] = root;
             newRoot.splitChild(0, root);
 
             return newRoot;
         }
 
+        public static boolean deleteKey(Node root, int key) {
+            Node containerNode = root.find(key);
+
+            if (containerNode == null) {
+                return false;
+            }
+
+            return containerNode.delete(key);
+        }
+
         public static Node initTree() {
-            return new Node(true);
+            return new Node(true, true);
         }
     }
 
@@ -255,12 +304,12 @@ public class Btree {
         System.out.printf("Find key %d: %s", 7, root.find(7));
         System.out.printf("Find key %d: %s", 3, root.find(3));
 
-        System.out.printf("Deleted key %d: %b", 3, root.delete(3));
+        System.out.printf("Deleted key %d: %b", 3, BTreeManager.deleteKey(root, 3));
         System.out.println();
         System.out.println("After delete");
         System.out.println(root);
 
-        System.out.printf("Deleted key %d: %b", 7, root.delete(7));
+        System.out.printf("Deleted key %d: %b", 7, BTreeManager.deleteKey(root, 7));
         System.out.println();
         System.out.println("After delete");
         System.out.println(root);
