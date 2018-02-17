@@ -1,8 +1,12 @@
 /**
  * Created on 4/2/2018.
+ *
+ * Btree structure implementation with the following properties:
+ * - keeps entries in simple array structure
+ * - keeps children in array structure mapped to the key array structure
  */
 public class Btree {
-    public static int MIN_DEGREE = 3;
+    public static int MIN_NUM_CHILDREN = 3;
 
     public static class Entry {
         public int key;
@@ -22,13 +26,13 @@ public class Btree {
     public static class Node {
         private boolean leaf;
         private int numKeys;
-        public Entry[] keys;
+        public Entry[] entries;
         public Node[] children;
 
         public Node(boolean leaf) {
             this.leaf = leaf;
-            keys = new Entry[2 * MIN_DEGREE - 1];
-            children = new Node[2 * MIN_DEGREE];
+            entries = new Entry[2 * MIN_NUM_CHILDREN - 1];
+            children = new Node[2 * MIN_NUM_CHILDREN];
         }
 
         /**
@@ -41,7 +45,7 @@ public class Btree {
                 addNewEntry(newEntry);
             } else {
                 int index = numKeys - 1;
-                while (keys[index].key > newEntry.key) {
+                while (entries[index].key > newEntry.key) {
                     index--;
                 }
 
@@ -56,13 +60,59 @@ public class Btree {
             return this;
         }
 
+        public boolean delete(int key) {
+            Node containerNode = find(key);
+
+            if (containerNode == null) {
+                return false;
+            }
+
+            return deleteFromChild(containerNode, key);
+        }
+
+        private boolean deleteFromChild(Node child, int key) {
+            if (child.isLeaf()) {
+
+                // case 1: key in leaf node with enough keys aside from deleted key
+                // make sure that this node still fulfills the BTree properties after deleting the key
+                // min numKeys must be MIN_NUM_CHILDREN - 1 at all times
+                if (child.numKeys >= MIN_NUM_CHILDREN) {
+                    if (!child.hasKey(key)) {
+                        return false;
+                    }
+
+                    // remove key
+                    int index = child.numKeys - 1;
+                    while (key != child.entries[index].key) {
+                        index--;
+                    }
+
+                    child.entries[index] = null;
+
+                    // compact keys
+                    for (int i = index; i < child.numKeys - 1; i++) {
+                        child.entries[i] = child.entries[i + 1];
+                    }
+
+                    // decrement current number of keys
+                    child.numKeys--;
+                } else {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         @Override
         public String toString() {
-            StringBuilder sb = new StringBuilder();
+            StringBuilder sb = new StringBuilder("Leaf: " + leaf + ", ");
 
             for (int i = 0; i < numKeys; i++) {
-                sb.append(keys[i] + ", ");
+                sb.append(entries[i] + ", ");
             }
+
+            sb.append("\n");
 
             if (!isLeaf()) {
                 for (int i = 0; i < numKeys; i++) {
@@ -77,8 +127,40 @@ public class Btree {
             return sb.toString();
         }
 
+        // todo implement better search algo
+        public Node find(int key) {
+            // lookup key in current node
+            if (hasKey(key)) {
+                return this;
+            }
+
+            // reached leaf without finding key
+            if (isLeaf()) {
+                return null;
+            }
+
+            // lookup key in children
+            // find lookup branch
+            int index = 0;
+            while (index < numKeys && key > entries[index].key) {
+                index++;
+            }
+
+            return children[index].find(key);
+        }
+
+        private boolean hasKey(int key) {
+            for (int i = 0; i < numKeys; i++) {
+                if (entries[i].key == key) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public boolean isFull() {
-            return numKeys == 2 * MIN_DEGREE - 1;
+            return numKeys == 2 * MIN_NUM_CHILDREN - 1;
         }
 
         public boolean isLeaf() {
@@ -88,21 +170,21 @@ public class Btree {
         private Node splitChild(int childIndex, Node child) {
             Node newChild = new Node(child.isLeaf());
 
-            // copy over keys
-            for (int i = 0; i < MIN_DEGREE - 1; i++) {
-                newChild.keys[i] = child.keys[MIN_DEGREE + i];
+            // copy over entries
+            for (int i = 0; i < MIN_NUM_CHILDREN - 1; i++) {
+                newChild.entries[i] = child.entries[MIN_NUM_CHILDREN + i];
                 newChild.numKeys++;
             }
 
             // copy over children if not leaf
             if (!isLeaf()) {
-                for (int i = 0; i < MIN_DEGREE; i++) {
-                    newChild.children[i] = child.children[MIN_DEGREE + i];
+                for (int i = 0; i < MIN_NUM_CHILDREN; i++) {
+                    newChild.children[i] = child.children[MIN_NUM_CHILDREN + i];
                 }
             }
 
-            // reduce keys and children in old node
-            child.numKeys = MIN_DEGREE - 1;
+            // reduce entries and children in old node
+            child.numKeys = MIN_NUM_CHILDREN - 1;
 
             // link new child to the correct index position
             // shift all tailing children in the array to make room
@@ -113,7 +195,7 @@ public class Btree {
             this.children[childIndex + 1] = newChild;
 
             // move middle key of child to current node
-            addNewEntry(child.keys[MIN_DEGREE - 1]);
+            addNewEntry(child.entries[MIN_NUM_CHILDREN - 1]);
 
             // return current node to further use in search/insert
             // current node will be updated and will contain one extra key and one extra child
@@ -123,16 +205,16 @@ public class Btree {
         // todo implement better search/insert algo
         private boolean addNewEntry(Entry entry) {
             if (numKeys == 0) {
-                keys[0] = entry;
+                entries[0] = entry;
             } else {
                 int index = numKeys - 1;
 
-                while (keys[index].key > entry.key) {
-                    keys[index + 1] = keys[index];
+                while (entries[index].key > entry.key) {
+                    entries[index + 1] = entries[index];
                     index --;
                 }
 
-                keys[index + 1] = entry;
+                entries[index + 1] = entry;
             }
 
             // increment number of children
@@ -168,6 +250,19 @@ public class Btree {
         }
 
         // print
+        System.out.println(root);
+
+        System.out.printf("Find key %d: %s", 7, root.find(7));
+        System.out.printf("Find key %d: %s", 3, root.find(3));
+
+        System.out.printf("Deleted key %d: %b", 3, root.delete(3));
+        System.out.println();
+        System.out.println("After delete");
+        System.out.println(root);
+
+        System.out.printf("Deleted key %d: %b", 7, root.delete(7));
+        System.out.println();
+        System.out.println("After delete");
         System.out.println(root);
     }
 }
