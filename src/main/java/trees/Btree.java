@@ -1,8 +1,10 @@
+package trees;
+
 /**
  * Created on 4/2/2018.
- *
- * Btree structure implementation with the following properties:
- * - keeps entries in simple array structure
+ * <p>
+ * trees.Btree structure implementation with the following properties:
+ * - keeps kvpairs in simple array structure
  * - keeps children in array structure mapped to the key array structure
  * BTree visualization: http://www.cs.usfca.edu/~galles/visualization/BTree.html
  */
@@ -40,6 +42,7 @@ public class Btree {
 
         /**
          * Inserts new entry into node. does not handle root node.
+         *
          * @param newEntry
          * @return
          */
@@ -55,7 +58,7 @@ public class Btree {
                 // found index position
                 if (children[index + 1].isFull()) {
                     // split child then reattempt to insert
-                    splitChild(index + 1, children[index+1]).insert(newEntry);
+                    splitChild(index + 1, children[index + 1]).insert(newEntry);
                 } else {
                     return children[index + 1].insert(newEntry);
                 }
@@ -70,26 +73,9 @@ public class Btree {
                 // make sure that this node still fulfills the BTree properties after deleting the key
                 // min numKeys must be MIN_DEGREE - 1 at all times
                 if (isRoot() || numKeys > MIN_DEGREE) {
-                    if (!hasKey(key)) {
-                        return false;
-                    }
-
-                    // remove key
-                    int index = numKeys - 1;
-                    while (key != entries[index].key) {
-                        index--;
-                    }
-
-                    entries[index] = null;
-
-                    // compact keys
-                    for (int i = index; i < numKeys - 1; i++) {
-                        entries[i] = entries[i + 1];
-                    }
-
-                    // decrement current number of keys
-                    numKeys--;
+                    return deleteLeafKey(key);
                 } else {
+                    // TODO implement other btree delete cases here
                     return false;
                 }
             }
@@ -143,13 +129,23 @@ public class Btree {
         }
 
         private boolean hasKey(int key) {
+            return getKeyIndex(key) != -1;
+        }
+
+        /**
+         * Returns index of key in the key array
+         *
+         * @param key
+         * @return
+         */
+        private int getKeyIndex(int key) {
             for (int i = 0; i < numKeys; i++) {
                 if (entries[i].key == key) {
-                    return true;
+                    return i;
                 }
             }
 
-            return false;
+            return -1;
         }
 
         public boolean isFull() {
@@ -167,7 +163,7 @@ public class Btree {
         private Node splitChild(int childIndex, Node child) {
             Node newChild = new Node(child.isLeaf(), false);
 
-            // copy over upper half of the entries
+            // copy over upper half of the kvpairs
             for (int i = 0; i < MIN_DEGREE - 1; i++) {
                 newChild.entries[i] = child.entries[MIN_DEGREE + i];
                 newChild.numKeys++;
@@ -180,7 +176,7 @@ public class Btree {
                 }
             }
 
-            // reduce entries and children in old node
+            // reduce kvpairs and children in old node
             child.numKeys = MIN_DEGREE - 1;
 
             // link new child to the correct index position
@@ -201,6 +197,7 @@ public class Btree {
 
         /**
          * Merge child at childIndex with child at childIndex + 1
+         *
          * @return
          */
         private Node mergeChildren(int childIndex) {
@@ -228,6 +225,7 @@ public class Btree {
             }
 
             // compact child mappings after merging in child[firstMergeChildIndex + 1]
+            // this removes the link to the sibling child
             for (int i = childIndex + 2; i <= numKeys; i++) {
                 children[i - 1] = children[i];
             }
@@ -241,6 +239,118 @@ public class Btree {
             return this;
         }
 
+        private Node getPredecessor(int key) {
+            int keyIndex = getKeyIndex(key);
+            int predIndex = keyIndex == 0 ? 0 : keyIndex - 1;
+            return children[predIndex];
+        }
+
+        private int getPredecessorKeyIndex(int key) {
+            Node predecessorNode = getPredecessor(key);
+            int predecessorIndex = predecessorNode.numKeys - 1;
+
+            while (key < predecessorNode.entries[predecessorIndex].key) {
+                predecessorIndex--;
+            }
+
+            return predecessorIndex;
+        }
+
+        private int getSuccessorKeyIndex(int key) {
+            Node successorNode = getPredecessor(key);
+            int successorIndex = 0;
+
+            for (int i = 0; i < successorNode.numKeys; i++) {
+                if (successorNode.entries[i].key >= key) {
+                    return i;
+                }
+            }
+
+            return successorIndex;
+        }
+
+        private Node getSuccessor(int key) {
+            int keyIndex = getKeyIndex(key);
+            int succIndex = keyIndex + 1;
+            return children[succIndex];
+        }
+
+        // case 1: key in leaf node with enough keys aside from deleted key
+        // make sure that this node still fulfills the BTree properties after deleting the key
+        // min numKeys must be MIN_DEGREE - 1 at all times
+        private boolean deleteLeafKey(int key) {
+            if (!hasKey(key)) {
+                return false;
+            }
+
+            // remove key
+            int index = numKeys - 1;
+            while (key != entries[index].key) {
+                index--;
+            }
+
+            entries[index] = null;
+
+            // compact keys
+            for (int i = index; i < numKeys - 1; i++) {
+                entries[i] = entries[i + 1];
+            }
+
+            // decrement current number of keys
+            numKeys--;
+
+            return true;
+        }
+
+        // case 2: delete inner node key when there is no need
+        // to resize the tree height
+        private boolean deleteInnerNodeKey(int key) {
+            Node predecessor = getPredecessor(key);
+            Node successor = getSuccessor(key);
+
+            // if predecessor node has more than MIN_DEGREE - 1 keys then
+            // pull up the predecessor key to this node
+            if (predecessor.numKeys >= MIN_DEGREE) {
+                int keyIndex = getKeyIndex(key);
+                int predKeyIndex = getPredecessorKeyIndex(key);
+
+                entries[keyIndex] = predecessor.entries[predKeyIndex];
+
+                // null predecessor key reference
+                predecessor.entries[predKeyIndex] = null;
+
+                // reset predecessor key set size
+                predecessor.numKeys--;
+
+                return true;
+            }
+            // if successor node has more than MIN_DEGREE - 1 keys then
+            // pull up the successor key to this node
+            else if (getSuccessor(key).numKeys >= MIN_DEGREE) {
+                int keyIndex = getKeyIndex(key);
+                int successorKeyIndex = getSuccessorKeyIndex(key);
+
+                entries[keyIndex] = successor.entries[successorKeyIndex];
+
+                successor.entries[successorKeyIndex] = null;
+                successor.numKeys--;
+
+                return true;
+            }
+            // merge successor and predecessor nodes
+            else {
+                int keyIndex = getKeyIndex(key);
+                int predKeyIndex = getPredecessorKeyIndex(key);
+
+                // pulls key from current node into predecessor then
+                // merges predecessor with successor
+                mergeChildren(predKeyIndex);
+
+                // delete key from newly merged node
+                return children[predKeyIndex].delete(key);
+            }
+        }
+
         // todo implement better search/insert algo
         private boolean addNewEntry(Entry entry) {
             if (numKeys == 0) {
@@ -250,7 +360,7 @@ public class Btree {
 
                 while (entries[index].key > entry.key) {
                     entries[index + 1] = entries[index];
-                    index --;
+                    index--;
                 }
 
                 entries[index + 1] = entry;
