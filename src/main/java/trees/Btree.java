@@ -67,18 +67,48 @@ public class Btree {
         }
 
         public boolean delete(int key) {
-            if (isLeaf()) {
+            int keyIndex = getKeyIndex(key);
 
-                // case 1: key in leaf node with enough keys aside from deleted key
-                // make sure that this node still fulfills the BTree properties after deleting the key
-                // min numKeys must be MIN_DEGREE - 1 at all times
-                if (isRoot() || numKeys > MIN_DEGREE) {
+            if (keyIndex > 0) {
+                if (isLeaf()) {
                     return deleteLeafKey(key);
                 } else {
-                    // TODO implement other btree delete cases here
+                    return deleteInnerNodeKey(key);
+                }
+            } else {
+                // if this is a leaf node then the key is not in the tree
+                if (isLeaf()) {
                     return false;
                 }
+
+                // if the child where the key is supposed to be has less than
+                // MIN_NUM_KEYS keys then merge it with a sibling
+                if (children[keyIndex].numKeys < MIN_DEGREE) {
+                    Node deleteRoot = balanceNode(keyIndex);
+
+                    // 1. if the current node is the right-most node then the
+                    // last child of this node was merged with it's previous node
+                    // start recursing on that previous node as the last one was
+                    // removed during the merge.
+                    // 2. if this node's children were merged then
+                    // the current node's number of keys has been decreased.
+                    int rootIndex = keyIndex == numKeys && keyIndex > numKeys? keyIndex - 1 : keyIndex;
+
+                    deleteRoot.children[rootIndex].delete(key);
+                }
             }
+//            if (isLeaf()) {
+//
+//                // case 1: key in leaf node with enough keys aside from deleted key
+//                // make sure that this node still fulfills the BTree properties after deleting the key
+//                // min numKeys must be MIN_DEGREE - 1 at all times
+//                if (isRoot() || numKeys > MIN_DEGREE) {
+//                    return deleteLeafKey(key);
+//                } else {
+//                    // TODO implement other btree delete cases here
+//                    return false;
+//                }
+//            }
 
             return true;
         }
@@ -197,7 +227,7 @@ public class Btree {
 
         /**
          * Merge child at childIndex with child at childIndex + 1
-         *
+         * NOTE: this method covers cases 2c, 3b
          * @return
          */
         private Node mergeChildren(int childIndex) {
@@ -349,6 +379,92 @@ public class Btree {
                 // delete key from newly merged node
                 return children[predKeyIndex].delete(key);
             }
+        }
+
+        /**
+         * case 3
+         * @param childIndex
+         * @return
+         */
+        private Node balanceNode(int childIndex) {
+            if (childIndex > 0 && children[childIndex - 1].numKeys >= MIN_DEGREE) {
+                return borrowFromPrev(childIndex);
+            } else if (childIndex <= numKeys && children[childIndex + 1].numKeys >= MIN_DEGREE) {
+                return borrowFromNext(childIndex);
+            } else {
+                // both neighbouring siblings have the minimum number of keys
+                // need to merge them.
+                // merge child with right sibling
+                if (childIndex == numKeys) {
+                    return mergeChildren(childIndex - 1);
+                } else {
+                    return mergeChildren(childIndex);
+                }
+            }
+        }
+
+        private Node borrowFromPrev(int childIndex) {
+            Node child = children[childIndex];
+            Node sibling = children[childIndex - 1];
+
+            // shift keys in child one step to the right to make room for borrowed key
+            for (int i = child.numKeys - 1; i >= 0; i--) {
+                child.entries[i + 1] = child.entries[i];
+            }
+
+            // shift children also
+            if (!child.isLeaf()) {
+                for (int i = child.numKeys; i >=0; i--) {
+                    child.children[i + 1] = child.children[i];
+                }
+            }
+
+            // add key from left sibling to first position
+            if (!isLeaf()) {
+                // pull one key from the current node into the child
+                child.entries[0] = entries[childIndex - 1];
+            }
+
+            // move rightmost key from left sibling to parent
+            entries[childIndex - 1] = sibling.entries[sibling.numKeys - 1];
+
+            // update key counters
+            child.numKeys += 1;
+            sibling.numKeys -= 1;
+
+            return this;
+        }
+
+        private Node borrowFromNext(int childIndex) {
+            Node child = children[childIndex];
+            Node sibling = children[childIndex + 1];
+
+            // add left-most key from right sibling to child
+            child.entries[child.numKeys] = entries[childIndex];
+
+            // copy over children also
+            child.children[child.numKeys + 1] = sibling.children[0];
+
+            // move sibling's first key to parent
+            entries[childIndex] = sibling.entries[0];
+
+            // shift keys left in sibling node
+            for (int i = 0; i < sibling.numKeys - 1; i++) {
+                sibling.entries[i] = sibling.entries[i + 1];
+            }
+
+            // shift children in sibling
+            if (!isLeaf()) {
+                for (int i = 0; i < sibling.numKeys + 1; i++) {
+                    sibling.children[i] = sibling.children[i + 1];
+                }
+            }
+
+            // reset key counters
+            child.numKeys += 1;
+            sibling.numKeys -= 1;
+
+            return this;
         }
 
         // todo implement better search/insert algo
