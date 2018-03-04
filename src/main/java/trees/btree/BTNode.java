@@ -1,20 +1,21 @@
 package trees.btree;
 
+import java.util.Arrays;
+import java.util.Objects;
+
 /**
  * Created on 18/2/2018.
  */
-public class BTNode<K, V> {
+public class BTNode<K extends Comparable, V> {
     public static int MIN_DEGREE = 3; // min number of children
 
-    public final boolean leaf;
-    public final boolean root;
+//    public final boolean leaf;
+//    public final boolean root;
     public int numKeys;
     public final KVPair<K, V>[] kvpairs;
     public final BTNode[] children;
 
-    public BTNode(boolean leaf, boolean root, int minDegree) {
-        this.leaf = leaf;
-        this.root = root;
+    public BTNode(int minDegree) {
         kvpairs = new KVPair[2 * minDegree - 1];
         children = new BTNode[2 * minDegree];
     }
@@ -43,9 +44,20 @@ public class BTNode<K, V> {
         return numKeys == 2 * MIN_DEGREE - 1;
     }
 
+    public boolean isLeaf() {
+        return !hasChildren();
+    }
+
+    private boolean hasChildren() {
+        return Arrays.stream(children)
+                .filter(Objects::nonNull)
+                .findAny()
+                .isPresent();
+    }
+
     @Override
     public String toString() {
-        StringBuilder sb = new StringBuilder("Leaf: " + leaf + ", ");
+        StringBuilder sb = new StringBuilder("Leaf: " + isLeaf() + ", ");
 
         for (int i = 0; i < numKeys; i++) {
             sb.append(kvpairs[i] + ", ");
@@ -53,7 +65,7 @@ public class BTNode<K, V> {
 
         sb.append("\n");
 
-        if (!leaf) {
+        if (!isLeaf()) {
             for (int i = 0; i < numKeys; i++) {
                 sb.append(children[i].toString());
             }

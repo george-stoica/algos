@@ -513,7 +513,7 @@ public class Btree {
         }
     }
 
-    public static void main(String[] args) {
+    public static void main_old(String[] args) {
         Node root = BTreeManager.initTree();
 
         for (int i = 0; i < 10; i++) {
